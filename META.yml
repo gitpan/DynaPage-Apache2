@@ -1,0 +1,28 @@
+# http://module-build.sourceforge.net/META-spec.html
+#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
+name:         DynaPage-Apache2
+version:      0.90
+version_from: Apache2.pm
+installdirs:  site
+requires:
+    Apache::Const:                 0
+    Apache::RequestIO:             0
+    Apache::RequestRec:            0
+    Apache::RequestUtil:           0
+    APR::Const:                    0
+    APR::Table:                    0
+    CGI:                           0
+    CGI::Cookie:                   0
+    DynaPage::Document:            0
+    DynaPage::Document::ext::include: 0
+    File::Spec:                    0
+    IO::File::String:              0
+    ModPerl::Const:                0
+    strict:                        0
+    Test::Easy:                    1.01
+    URI:                           0
+    URI::URL:                      0
+    warnings:                      0
+
+distribution_type: module
+generated_by: ExtUtils::MakeMaker version 6.17

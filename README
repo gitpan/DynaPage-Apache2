@@ -1,0 +1,51 @@
+NAME
+
+    DynaPage::Apache2 - Apache2 mod_perl handler for DynaPage::Document
+
+     #------------------------------------------------------
+     # (C) Daniel Peder & Infoset s.r.o., all rights reserved
+     # http://www.infoset.com, Daniel.Peder@infoset.com
+     #------------------------------------------------------
+
+     $Revision: 1.9 $
+     $Date: 2005/01/14 10:51:01 $
+
+SYNOPSIS
+
+     # content of Apache2 config file
+     # file: /etc/httpd/conf.d/perl.conf
+ 
+     ...
+ 
+        PerlModule Apache2
+        PerlModule DynaPage::Apache2
+
+        AddType text/html .info
+        DirectoryIndex index.info
+
+        <Location ~ "\.info$">
+            SetHandler perl-script
+            PerlResponseHandler DynaPage::Apache2
+            PerlOptions +ParseHeaders
+            Options +ExecCGI
+        </Location>
+
+      ...
+  
+DESCRIPTION
+
+METHODS
+
+    handler ( $apache_request_object )
+
+AUTHOR
+
+     Daniel Peder
+
+     <Daniel.Peder@Infoset.COM>
+     http://www.infoset.com
+
+SEE ALSO
+
+            DynaPage::Document DynaPage::Sourcer DynaPage::Template
+        

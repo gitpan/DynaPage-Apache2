@@ -1,0 +1,566 @@
+head	1.8;
+access;
+symbols;
+locks
+	root:1.8; strict;
+comment	@# @;
+
+
+1.8
+date	2005.01.14.10.50.33;	author root;	state Exp;
+branches;
+next	1.7;
+
+1.7
+date	2005.01.13.21.29.56;	author root;	state Exp;
+branches;
+next	1.6;
+
+1.6
+date	2005.01.04.02.28.56;	author root;	state Exp;
+branches;
+next	1.5;
+
+1.5
+date	2005.01.01.12.57.39;	author root;	state Exp;
+branches;
+next	1.4;
+
+1.4
+date	2004.12.31.17.45.52;	author root;	state Exp;
+branches;
+next	1.3;
+
+1.3
+date	2004.12.30.23.06.48;	author root;	state Exp;
+branches;
+next	1.2;
+
+1.2
+date	2004.12.30.23.06.31;	author root;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2004.12.07.23.14.59;	author root;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.8
+log
+@*** empty log message ***
+@
+text
+@
+=head1 NAME
+
+DynaPage::Apache - Apache2 mod_perl handler for DynaPage::Document 
+
+ #------------------------------------------------------
+ # (C) Daniel Peder & Infoset s.r.o., all rights reserved
+ # http://www.infoset.com, Daniel.Peder@@infoset.com
+ #------------------------------------------------------
+
+=cut
+
+###													###
+###	size of <TAB> in this document is 4 characters	###
+###													###
+
+### //////////////////////////////////////////////////////////////////////////
+#
+#	SECTION: package
+#
+
+	package DynaPage::Apache;
+
+
+### //////////////////////////////////////////////////////////////////////////
+#
+#	SECTION: version
+#
+
+	use vars qw( $VERSION $VERSION_LABEL $REVISION $REVISION_DATETIME $REVISION_LABEL $PROG_LABEL );
+
+	$VERSION           = '0.90';
+	
+	$REVISION          = (qw$Revision: 1.7 $)[1];
+	$REVISION_DATETIME = join(' ',(qw$Date: 2005/01/13 21:29:56 $)[1,2]);
+	$REVISION_LABEL    = '$Id: Apache.pm,v 1.7 2005/01/13 21:29:56 root Exp $';
+	$VERSION_LABEL     = "$VERSION (rev. $REVISION $REVISION_DATETIME)";
+	$PROG_LABEL        = __PACKAGE__." - ver. $VERSION_LABEL";
+
+=pod
+
+ $Revision: 1.7 $
+ $Date: 2005/01/13 21:29:56 $
+
+=cut
+
+
+### //////////////////////////////////////////////////////////////////////////
+#
+#	SECTION: debug
+#
+
+	use vars qw( $DEBUG ); $DEBUG=0;
+	
+
+### //////////////////////////////////////////////////////////////////////////
+#
+#	SECTION: pod intro
+#
+
+=head1 SYNOPSIS
+
+ ...Apache2 config 
+ 
+ PerlModule DynaPage::Apache
+
+  <IfModule mod_perl.c>
+  ...
+    <Files ~ "\.info$">
+     SetHandler perl-script
+     PerlResponseHandler DynaPage::Apache
+     PerlOptions +ParseHeaders
+     Options +ExecCGI
+    </Files>
+  ...
+  </IfModule>
+ 
+ ...Apache2 config
+  
+=head1 DESCRIPTION
+
+=cut
+
+
+
+### //////////////////////////////////////////////////////////////////////////
+#
+#	SECTION: modules use
+#
+
+	require 5.005_62;
+
+	use strict                  ;
+	use warnings                ;
+	
+	use	Apache::Const 			;
+	use	APR::Const 				;
+	use	ModPerl::Const			;
+
+	use	Apache::RequestRec		;
+	use	Apache::RequestUtil		;
+	use	Apache::RequestIO ()	;
+	
+	use	CGI						;
+	use CGI::Cookie    			;
+	use URI                     ;
+	use URI::URL                ;
+	
+	use File::Spec              ;
+	
+	use IO::File::String        ;
+	
+	use	DynaPage::Document		;
+	use DynaPage::Document::ext::include;
+	
+
+### //////////////////////////////////////////////////////////////////////////
+#
+#	SECTION: methods
+#
+
+=head1 METHODS
+
+=over 4
+
+=cut
+
+
+
+
+
+
+
+
+### ##########################################################################
+
+=item handler ( $apache_request_object )
+
+=cut
+
+### --------------------------------------------------------------------------
+sub handler : method
+### --------------------------------------------------------------------------
+{
+	my(		$class, $r		)=@@_;
+	
+	my	$self = {};
+		bless( $self, $class );
+	
+	my	$filename 		= $r->filename; 
+		return			Apache::NOT_FOUND unless -f($filename); # because we've been catched by location ~.info
+	my  $modified       = -M(_);
+	my	$root_dir		= File::Spec->catdir( $r->document_root, ( $ENV{'MAP_DIR'} || '' ) );
+	my	$options		= { 
+            Document => "/$filename", 
+            DocumentModified => $modified,
+            RootDir => $root_dir ,
+        };
+	my	$doc			= DynaPage::Document->new( $options );
+	
+		# $doc->CallHook( 'Init' );
+		
+		if( $doc->GetSignal ) {
+    		if( my $target_string = $doc->GetSignal('HTTP_REDIRECT') )
+    		{
+                my $base_url = sprintf '%s://%s%s', ( lc($ENV{SERVER_PROTOCOL}) =~ m/^([a-z]+)/ )[0], $ENV{HTTP_HOST}, ($ENV{REQUEST_URI}||'/');
+                my $target_url = URI::URL->new( $target_string, $base_url );
+    			$r->headers_out->add( Location => $target_url->abs );
+    			return Apache::REDIRECT;
+    		}
+    		elsif( $doc->GetSignal( 'HTTP_DECLINED'))
+    		{
+    			return Apache::DECLINED;
+    		}
+        }
+
+	my	$Content		= $doc->Render();
+
+	my	$ContentType	= $doc->Sourcer->Get('!content-type') || 'text/html';
+	my	$ContentCharset	= $doc->Sourcer->Get('!content-charset');
+		$ContentType	.= "; charset=$ContentCharset" if $ContentCharset;
+	my	$ContentLanguage = $doc->Sourcer->Get('!content-language') || 'en';
+
+	    $r->content_type($ContentType); # TODO: check if there 
+	    $r->headers_out->add( 'X-Handler-Signature' => $PROG_LABEL );
+
+#	my  $ContentLanguages = $r->content_languages();
+#	    $ContentLanguages->add($ContentLanguage);
+#	    $r->content_languages([$ContentLanguage]); # must be APR::ArrayHeader
+
+	    $r->discard_request_body();
+
+	    $r->print( $Content );
+	
+	return Apache::OK;
+}
+
+
+### ##########################################################################
+
+=item	FastDebugDump ( )
+ 
+Only for development debuging
+
+=cut
+
+### ---------------------
+sub FastDebugDump
+### ---------------------
+{
+	my(		$self, $r		)=@@_;
+	
+	# -- file exists --	
+	#
+		my $fh = Apache::File->new( $r->filename );
+		
+	# unless( defined $fh )
+	# {
+	# 	return NOT_FOUND;
+	# }
+	
+	# -- info file --
+	#
+	# 	my $InfoFile = DP::InfoDoc::File->new;
+	# 
+	# $InfoFile->parse( $fh );
+
+    $r->content_type("text/plain");
+    $r->send_http_header;
+	
+    $r->print(join( "\n"
+		,'prg.lbl.: '.$PROG_LABEL
+		,''
+		,'is_vhost: '.$r->server->is_virtual
+		,'doc_root: '.$r->document_root
+		,'map_dir.: '.$ENV{'MAP_DIR'}           # virtual root prefix - by apache mod_rewrite
+		,'uri.....: '.$r->uri
+		,'hostname: '.$r->hostname
+		,'filename: '.$r->filename
+		,'class...: '.ref($self)
+		,''
+		,'--self--'
+		,Data::Dump::dump( $self )
+		,''
+		,'--ENV--'
+		,Data::Dump::dump( \%ENV )
+	));
+	
+	# $r->send_fd( $fh );
+
+}
+
+
+1;
+
+
+### //////////////////////////////////////////////////////////////////////////
+#
+#	SECTION: pod epilogue
+#
+
+=back
+
+=cut
+
+=head1 AUTHOR
+
+ Daniel Peder
+
+ <Daniel.Peder@@Infoset.COM>
+ http://www.infoset.com
+
+=head1 SEE ALSO
+
+	DynaPage::Document DynaPage::Sourcer DynaPage::Template
+	
+=cut
+
+__DATA__
+
+__END__
+
+### //////////////////////////////////////////////////////////////////////////
+#
+#	SECTION: changes log
+#
+
+	$Log: Apache.pm,v $
+	Revision 1.7  2005/01/13 21:29:56  root
+	*** empty log message ***
+
+	Revision 1.3  2004/12/30 23:06:48  root
+	*** empty log message ***
+
+	Revision 1.1  2004/11/27 16:58:26  root
+	Initial revision
+
+
+@
+
+
+1.7
+log
+@*** empty log message ***
+@
+text
+@d6 5
+a12 6
+#------------------------------------------------------
+# (C) Daniel Peder & Infoset s.r.o., all rights reserved
+# http://www.infoset.com, Daniel.Peder@@infoset.com
+#------------------------------------------------------
+
+
+d34 3
+a36 3
+	$REVISION          = (qw$Revision: 1.3 $)[1];
+	$REVISION_DATETIME = join(' ',(qw$Date: 2004/12/30 23:06:48 $)[1,2]);
+	$REVISION_LABEL    = '$Id: Apache.pm,v 1.3 2004/12/30 23:06:48 root Exp root $';
+d42 2
+a43 2
+ $Revision: 1.3 $
+ $Date: 2004/12/30 23:06:48 $
+d289 3
+@
+
+
+1.6
+log
+@*** empty log message ***
+@
+text
+@d33 1
+a33 1
+	$VERSION           = '0.20';
+d107 2
+d115 1
+a150 2
+	# %{$$self{'args'}} = $r->args;
+	
+d152 2
+a153 1
+		return			NOT_FOUND unless -f $filename; # because we've been catched by location ~.info
+d155 5
+a159 1
+	my	$options		= { Document => "/$filename", RootDir => $root_dir };
+d162 16
+a177 14
+		# init
+		# intended to scan all data and 
+		# probably make some decision that
+		# we would rather redirect or decline
+		$doc->CallHandler( 'Init' );
+		if( $doc->GetSignal( 'HTTP_DECLINED'))
+		{
+			return Apache::DECLINED;
+		}
+		elsif( my $uri = $doc->GetSignal('HTTP_REDIRECT') )
+		{
+			$r->header_out(Location => "$uri" );
+			return Apache::REDIRECT;
+		}
+d179 1
+d185 7
+a191 1
+        # clean unused data
+a193 4
+	    $r->content_type($ContentType); # TODO: check if there 
+	    #$r->content_languages([$ContentLanguage]); # must be APR::ArrayHeader
+	    $r->headers_out->add( 'X-Handler-Signature' => $PROG_LABEL );
+		# $r->send_http_header;
+@
+
+
+1.5
+log
+@*** empty log message ***
+@
+text
+@d106 1
+a106 1
+	use CGI::Cookies			;
+a149 2
+	my	$rc = $r->discard_request_body();
+
+d174 4
+d180 2
+@
+
+
+1.4
+log
+@*** empty log message ***
+@
+text
+@d105 3
+@
+
+
+1.3
+log
+@*** empty log message ***
+@
+text
+@d4 1
+a4 1
+DynaPage::Apache - Apache [2] mod_perl handler for DynaPage::Document 
+d35 3
+a37 3
+	$REVISION          = (qw$Revision: 1.1 $)[1];
+	$REVISION_DATETIME = join(' ',(qw$Date: 2004/11/27 16:58:26 $)[1,2]);
+	$REVISION_LABEL    = '$Id: Apache.pm,v 1.1 2004/11/27 16:58:26 root Exp root $';
+d43 2
+a44 2
+ $Revision: 1.1 $
+ $Date: 2004/11/27 16:58:26 $
+d130 2
+d136 1
+a136 1
+### ------------
+d138 1
+a138 1
+### ------------
+a141 2
+	# my $self = bless {}, $class;
+	
+d150 1
+a150 1
+		return			NOT_FOUND unless -f $filename; # because we've been catched by location ~.Info
+d154 15
+d178 1
+a178 1
+	return OK;
+d182 2
+d272 3
+@
+
+
+1.2
+log
+@*** empty log message ***
+@
+text
+@d36 2
+a37 2
+	$REVISION_DATETIME = join(' ',(qw$Date: 2004/12/07 23:14:59 $)[1,2]);
+	$REVISION_LABEL    = '$Id: Apache.pm,v 1.1 2004/12/07 23:14:59 root Exp root $';
+d44 1
+a44 1
+ $Date: 2004/12/07 23:14:59 $
+d134 1
+a134 1
+### ----------------------------------------------------------------------------
+d136 1
+a136 1
+### ----------------------------------------------------------------------------
+d145 1
+a145 1
+	%{$$self{'args'}} = $r->args;
+d149 13
+a161 20
+	if( $$self{args}{debug} )
+	{
+		$self->FastDebugDump( $r );
+	}
+	else
+	{
+		my	$filename 		= $r->filename; 
+			return			NOT_FOUND unless -f $filename; # because we've been catched by location ~.Info
+		my	$root_dir		= File::Spec->catdir( $r->document_root, ( $ENV{'MAP_DIR'} || '' ) );
+		my	$options		= { Document => "/$filename", RootDir => $root_dir };
+		my	$doc			= DynaPage::Document->new( $options );
+		my	$Content		= $doc->Render();
+		my	$ContentType	= $doc->Sourcer->Get('!content-type') || 'text/html';
+		my	$ContentCharset	= $doc->Sourcer->Get('!content-charset');
+			$ContentType	.= "; charset=$ContentCharset" if $ContentCharset;
+
+		    $r->content_type($ContentType); # TODO: check if there 
+			# $r->send_http_header;
+		    $r->print( $Content );
+	}
+a254 3
+	Revision 1.1  2004/12/07 23:14:59  root
+	Initial revision
+
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d36 2
+a37 2
+	$REVISION_DATETIME = join(' ',(qw$Date: 2004/11/27 16:58:26 $)[1,2]);
+	$REVISION_LABEL    = '$Id: Apache.pm,v 1.1 2004/11/27 16:58:26 root Exp root $';
+d44 1
+a44 1
+ $Date: 2004/11/27 16:58:26 $
+d134 1
+a134 1
+### ------------
+d136 1
+a136 1
+### ------------
+d262 3
+@
